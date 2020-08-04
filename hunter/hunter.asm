@@ -804,89 +804,6 @@ setup_video:
     dey
     bne     -
 
-    jmp skip_intro
-  
-    ; Show the Neo 2010 summer compo badge
-    sti16 indPtr,badge_nametable
-    lda     #$CE
-    sta     vramAddr
-    lda     #$01
-    sta     vramAddr+1
-    ldy     #15
--:
-    st0     #0
-    lda     vramAddr
-    sta.w   VDC_DATA_L
-    lda     vramAddr+1
-    sta.w   VDC_DATA_H
-    st0     #2
-    ldx     #16
---:
-    lda     (<indPtr)
-    clc
-    adc     #$80
-    sta.w   VDC_DATA_L
-    INCW    indPtr
-    lda     (<indPtr)
-    adc     #0
-    sta.w   VDC_DATA_H
-    INCW    indPtr
-    dex
-    bne     --
-    lda     vramAddr
-    clc
-    adc     #64
-    sta     vramAddr
-    lda     vramAddr+1
-    adc     #0
-    sta     vramAddr+1
-    dey
-    bne     -
-    
-    ; Load the tiles and palette for the badge
-    set_mawri $0800
-    st0     #2
-    tia     badge_patterns,VDC_DATA_L,199*32
-
-    stz.w   VCE_INDEX_L
-    stz.w   VCE_INDEX_H
-    tia     badge_palette,VCE_DATA_L,badge_palette_end-badge_palette
-    
-    ; Wait about 2 seconds
-    lda     #110
-    sta     tempw
-    cli
--:
-    lda     #127
-    sta     delay
-    jsr     start_timer
---:
-    lda     waitTimer
-    bne     --
-    dec     tempw
-    bne     -
-
-    ; Fade out
-    lda     #8
-    sta     tempw
--:
-    lda     #10
-    sta     tempw+1
---:
-    lda     #127
-    sta     delay
-    jsr     start_timer
----:
-    lda     waitTimer
-    bne     ---
-    dec     tempw+1
-    bne     --
-    jsr     fade_out
-    dec     tempw
-    bne     -
-
-skip_intro:
-
     sei
 
     lda     #$01     ; $8000-$9FFF: ROM bank 1 (graphics data)
@@ -951,56 +868,6 @@ skip_intro:
     stz.w   VCE_INDEX_H
     tia     palette,VCE_DATA_L,palette_end-palette
 
-    rts
-
-
-; Decrease R, G and B by 1 for each of the first 16 colors in the palette 
-fade_out:
-    stz     temp
--:
-    lda     temp
-    sta     VCE_INDEX_L
-    stz     VCE_INDEX_H
-    lda     VCE_DATA_L     ; read LSB of color n from the VCE
-    sta     color
-    lda     VCE_DATA_H     ; read MSB
-    sta     color+1
-    lda     temp
-    sta     VCE_INDEX_L
-    stz     VCE_INDEX_H
-
-    lda     color
-    and     #7     ; blue
-    beq     +      ; don't decrease values unless they are > 0
-    dea
-+:
-    sta     color+2
-    lda     color
-    and     #$38  ; red
-    beq     +
-    sec
-    sbc     #8
-+:
-    ora     color+2  ; red|blue
-    sta     color+2
-    lsr     color+1
-    ror     color
-    lda     color
-    and     #$E0    ; green
-    beq     +
-    sec
-    sbc     #$20
-+:
-    asl     a
-    ora     color+2    ;green|red|blue
-    sta     VCE_DATA_L
-    rol     color+1
-    lda     color+1
-    sta     VCE_DATA_H
-    inc     temp
-    lda     temp
-    cmp     #16
-    bne     -
     rts
 
 
@@ -1523,7 +1390,6 @@ update_volume:
     beq     +
     cmp     #0
     beq     ++
-    ;ora		#$10
     tax
     lda.w   logvolume,x
 ++:
@@ -1538,13 +1404,12 @@ update_volume:
     lda     apuRegs+4
     and     #$0F
     sta     temp
-    lda     $4004
+    lda     <$4004
     and     #$0F
     cmp     temp
     beq     +
     cmp     #0
     beq     ++
-;    ora		#$10
     tax
     lda.w   logvolume,x
 ++:
@@ -1565,7 +1430,6 @@ update_volume:
     beq     +
     cmp     #0
     beq     ++
-;    ora		#$10
     tax
     lda.w   logvolume,x
 ++:
@@ -1600,7 +1464,6 @@ update_duty:
     lda     chn0Ctrl
     bbs4    <$00,++
     lda     chnEnv
-    ;ora		#$10
     tax
     lda.w   logvolume,x
     ora     chnEnable
@@ -1631,7 +1494,6 @@ update_duty:
     lda     chn2Ctrl
     bbs4    <$04,++
     lda     chnEnv+1
-;    ora		#$10
     tax
     lda.w   logvolume,x
     ora     chnEnable+1
@@ -1861,7 +1723,7 @@ update_period:
     cmp     apuRegs+7
     beq     ++
 +:
-    lda     channelMap+1 ;#2
+    lda     channelMap+1
     sta     PSG_CHANNEL_SELECT
     lda     <$4006
     sta     PSG_FREQ_FINE
@@ -1895,7 +1757,7 @@ update_period:
     cmp     invalidValue
     beq     +
     ; Restart envelope
-    lda     $4004
+    lda     <$4004
     and     #$0F
     sta     chnEnvCounter+1
     lda     #$0F
@@ -1995,7 +1857,7 @@ update_period:
     lda     <$400E
     cmp     apuRegs+$E
     beq     ++
-    lda     channelMap+3 ;#4
+    lda     channelMap+3
     sta     PSG_CHANNEL_SELECT
     lda     <$400E
     bmi     +
@@ -2266,16 +2128,6 @@ palette_end:
 
 .bank 2 slot 4
 .section "data2"
-
-badge_nametable:
-    .incbin "badge.nam"
-badge_patterns:
-    .incbin "badge.chr"
-badge_palette:
-    .incbin "badge.pal"
-badge_palette_end:
-
-
 .ends
 .org $1FFD
 .db "mic"
