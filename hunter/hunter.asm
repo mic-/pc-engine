@@ -114,7 +114,8 @@ vramAddr          ds 2
 textColor         ds 1
 count1            ds 1
 f0backup          ds 16
-chnSweepCounter   ds 2
+chnSweepPeriod    ds 2
+chnSweepReload    ds 2
 highlightedNSF    ds 1
 highlightedSong   ds 1
 currMaxSong       ds 1
@@ -681,10 +682,13 @@ load_nsf:
     stz     lcReloadFlag
 
     lda     #1
-    sta     chnSweepCounter
-    sta     chnSweepCounter+1
+    sta     chnSweepPeriod
+    sta     chnSweepPeriod+1
 
-    lda     #$0 ;F
+    stz     chnSweepReload
+    stz     chnSweepReload+1
+
+    lda     #$0
     sta     chnEnv
     sta     chnEnv+1
     sta     chnEnv+2
@@ -1505,132 +1509,177 @@ update_duty:
 
 update_sweep:
     lda     <$4001
+    ldx     #0
     cmp     #$7D
     beq     +
     sta     sq1Swp
+    ldx     #1
 +:
+    stx     chnSweepReload
+
+    ldx     #0
     lda     <$4005
     cmp     #$7D
     beq     +
     sta     sq2Swp
+    ldx     #1
 +:
+    stx     chnSweepReload+1
+
     ;-----------------------
     ; Square 1
     ;-----------------------
     lda     sq1Swp
-    bpl     +++
-    dec     chnSweepCounter
-    bne     +++
+    ; Check that the enable bit is set and that the shift count is non-zero
+    bpl     _sweep1_check_reload
+    bit     #7
+    beq     _sweep1_check_reload
+    ; Check that the sweep divider period is or will become zero
+    ldx     chnSweepPeriod
+    beq     _sweep1_update_period
+    dec     chnSweepPeriod
+    beq     _sweep1_update_period
+_sweep1_check_reload:
+    lda     chnSweepReload
+    beq     +
+    stz     chnSweepReload
+    lda     sq1Swp
     lsr     a
     lsr     a
     lsr     a
     lsr     a
     and     #7
     ina
-    sta     chnSweepCounter
+    sta     chnSweepPeriod
++:
+    bra     _sweep1_done
+_sweep1_update_period:
+    lsr     a
+    lsr     a
+    lsr     a
+    lsr     a
+    and     #7
+    ina
+    sta     chnSweepPeriod
     lda     sq1Per
     sta     tempw
     lda     sq1Per+1
     sta     tempw+1
-    lda     sq1Swp 
-    and    	#7
-    beq     +++
+    lda     sq1Swp
+    and     #7
+    ; tempw = sq1Per >> (reg4001 & 7)
 -:
-    lsr     sq1Per+1
-    ror     sq1Per
+    lsr     tempw+1
+    ror     tempw
     dea
     bne     -
-++:
     lda     sq1Swp
     and     #8
-    bne     ++
+    bne     _sweep1_negative
     lda     sq1Per
     clc
     adc     tempw
     sta     <$4002
     lda     sq1Per+1
     adc     tempw+1
+_sweep1_check_in_range:
+    cmp     #8
+    bcs     +
+    sta     tempw
+    lda     apuRegs+3   ; LLLLLttt
+    and     #$F8        ; LLLLL000
+    ora     tempw       ; LLLLLttt'
     sta     <$4003
-    bpl     +++
-    stz     <$4002
-    stz     <$4003
-    bra     +++
-++:
+    bra     _sweep1_check_reload
+_sweep1_negative:
     lda     sq1Per
     sec
     sbc     tempw
     sta     <$4002
     lda     sq1Per+1
     sbc     tempw+1
-    sta     <$4003
-    bmi     ++
-    bne     +++
-    lda     <$4002
-    cmp     #8
-    bcs     +++
-++:
+    bra     _sweep1_check_in_range
++:
     stz     <$4002
     stz     <$4003
-+++:
+_sweep1_done:
 
     ;-----------------------
     ; Square 2
     ;-----------------------
     lda     sq2Swp
-    bpl     +++
-    dec     chnSweepCounter+1
-    bne     +++
+    ; Check that the enable bit is set and that the shift count is non-zero
+    bpl     _sweep2_check_reload
+    bit     #7
+    beq     _sweep2_check_reload
+    ; Check that the sweep divider period is or will become zero
+    ldx     chnSweepPeriod+1
+    beq     _sweep2_update_period
+    dec     chnSweepPeriod+1
+    beq     _sweep2_update_period
+_sweep2_check_reload:
+    lda     chnSweepReload+1
+    beq     +
+    stz     chnSweepReload+1
+    lda     sq2Swp
     lsr     a
     lsr     a
     lsr     a
     lsr     a
     and     #7
     ina
-    sta     chnSweepCounter+1
+    sta     chnSweepPeriod+1
++:
+    bra     _sweep2_done
+_sweep2_update_period:
+    lsr     a
+    lsr     a
+    lsr     a
+    lsr     a
+    and     #7
+    ina
+    sta     chnSweepPeriod+1
     lda     sq2Per
     sta     tempw
     lda     sq2Per+1
     sta     tempw+1
-    lda     sq2Swp 
-    and    	#7
-    beq     +++
+    lda     sq2Swp
+    and     #7
 -:
-    lsr     sq2Per+1
-    ror     sq2Per
+    lsr     tempw+1
+    ror     tempw
     dea
     bne     -
-++:
     lda     sq2Swp
     and     #8
-    bne     ++
+    bne     _sweep2_negative
     lda     sq2Per
     clc
     adc     tempw
     sta     <$4006
     lda     sq2Per+1
     adc     tempw+1
+_sweep2_check_in_range:
+    cmp     #8
+    bcs     +
+    sta     tempw
+    lda     apuRegs+7
+    and     #$F8
+    ora     tempw
     sta     <$4007
-    bpl     +++
-    stz     <$4006
-    stz     <$4007
-    bra     +++
-++:
+    bra     _sweep2_check_reload
+_sweep2_negative:
     lda     sq2Per
     sec
     sbc     tempw
     sta     <$4006
     lda     sq2Per+1
     sbc     tempw+1
-    sta     <$4007
-    bmi     ++
-    bne     +++
-    lda     <$4006
-    cmp     #8
-    bcs     +++
-++:
+    bra     _sweep2_check_in_range
++:
     stz     <$4006
     stz     <$4007
-+++:
+_sweep2_done:
 
     ; Fall through to update_period
 
